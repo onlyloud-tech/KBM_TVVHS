@@ -93,31 +93,32 @@ Events.OnFillContainer.Add(function(roomName, containerType, container)
     placeStoreTV(parent and parent:getSquare(), container)
 end)
 
-local function addCamcorder2()
-    local displayCase = ProceduralDistributions.list.CameraStoreDisplayCase
-    local items = displayCase and displayCase.items
-    if not items then return end
-    for i = 1, #items, 2 do
-        if items[i] == "KBM.Camcorder2" then return end
+local function addCamcorders()
+    for _, target in ipairs({
+        { name = "CameraStoreDisplayCase", weight = 4 },
+        { name = "ElectronicStoreMisc", weight = 2 },
+    }) do
+        local distribution = ProceduralDistributions.list[target.name]
+        local items = distribution and distribution.items
+        if items then
+            for _, fullType in ipairs({ "KBM.Camcorder", "KBM.Camcorder2", "KBM.Camcorder3" }) do
+                local found = false
+                for i = 1, #items, 2 do
+                    if items[i] == fullType then
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    items[#items + 1] = fullType
+                    items[#items + 1] = target.weight
+                end
+            end
+        end
     end
-    items[#items + 1] = "KBM.Camcorder2"
-    items[#items + 1] = 4
 end
 
-Events.OnPreDistributionMerge.Add(addCamcorder2)
-
-local function addCamcorder3()
-    local displayCase = ProceduralDistributions.list.CameraStoreDisplayCase
-    local items = displayCase and displayCase.items
-    if not items then return end
-    for i = 1, #items, 2 do
-        if items[i] == "KBM.Camcorder3" then return end
-    end
-    items[#items + 1] = "KBM.Camcorder3"
-    items[#items + 1] = 4
-end
-
-Events.OnPreDistributionMerge.Add(addCamcorder3)
+Events.OnPreDistributionMerge.Add(addCamcorders)
 
 local function addVHSCollectionBox()
     for _, listName in ipairs({ "CrateVHSTapes", "MovieRentalShelves" }) do
