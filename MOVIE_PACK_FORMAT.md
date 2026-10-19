@@ -2,6 +2,8 @@
 
 A movie pack is a normal Project Zomboid Build 42 mod that declares `require=KBM_TVVHS`. It contains no Java jar and therefore creates no ZombieBuddy approval prompt.
 
+You do not need to assemble this layout by hand. [Knoxbox Media Converter](https://github.com/onlyloud-tech/Knoxbox-Media-Converter) automatically converts videos and creates movie-pack mods, including their catalog, VHS items, sounds, and loot distribution. Download the [portable Windows release](https://github.com/onlyloud-tech/Knoxbox-Media-Converter/releases) for a ready-to-run app; its README explains setup and importing. The details below are for authors who want to inspect or create a pack manually.
+
 ## Layout
 
 ```text
@@ -57,6 +59,8 @@ Every `packId`, `modId`, and `itemType` must be unique. Each catalog entry uses 
     audioChunkSeconds = 30,
 }
 ```
+
+For `audioLayout = "single"`, `audioChunkSeconds` is a compatibility field in the generated catalog; the audio is stored in one `audio.ogg` file, not split into 30-second segments.
 
 `video` is relative to the contributing mod's `media/video` directory. The movie runtime resolves it only when the declared mod is active and rejects paths that escape `media/video`.
 

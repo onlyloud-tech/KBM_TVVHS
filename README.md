@@ -10,7 +10,7 @@ Watch VHS tapes and home recordings on televisions in Project Zomboid Build 42. 
 
 ## Playing movies
 
-Find tapes in the world or add a movie pack. Use the KnoxBox Media Converter to make personal movies or create a separate movie-pack mod. Movie packs depend on `KBM_TVVHS`; see [MOVIE_PACK_FORMAT.md](MOVIE_PACK_FORMAT.md) for the format.
+Find tapes in the world or add a movie pack. [Knoxbox Media Converter](https://github.com/onlyloud-tech/Knoxbox-Media-Converter) automatically converts your videos and installs them into a personal library or a separate movie-pack mod. Its [Windows releases](https://github.com/onlyloud-tech/Knoxbox-Media-Converter/releases) include a portable executable, so you do not need Node.js to use it. Movie packs depend on `KBM_TVVHS`; see [MOVIE_PACK_FORMAT.md](MOVIE_PACK_FORMAT.md) if you want to inspect or build a pack yourself.
 
 For the KnoxBox 3D Television, equip a base-game TV remote and use its inventory action to open the KnoxBox remote for power, playback, pause, and volume controls.
 
