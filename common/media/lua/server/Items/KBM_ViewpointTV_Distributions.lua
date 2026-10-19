@@ -4,6 +4,7 @@ local function addTV()
     for _, target in ipairs({
         { name = "CrateTV", weight = 20 },
         { name = "ElectronicStoreAppliances", weight = 10 },
+        { name = "GigamartHouseElectronics", weight = 8 },
     }) do
         local distribution = ProceduralDistributions.list[target.name]
         local items = distribution and distribution.items
@@ -97,6 +98,7 @@ local function addCamcorders()
     for _, target in ipairs({
         { name = "CameraStoreDisplayCase", weight = 4 },
         { name = "ElectronicStoreMisc", weight = 2 },
+        { name = "GigamartHouseElectronics", weight = 3 },
     }) do
         local distribution = ProceduralDistributions.list[target.name]
         local items = distribution and distribution.items
@@ -147,6 +149,7 @@ local function addBlankVHS()
         { name = "CrateVHSTapes", weight = 12 },
         { name = "MovieRentalShelves", weight = 8 },
         { name = "CameraStoreDisplayCase", weight = 5 },
+        { name = "GigamartHouseElectronics", weight = 5 },
     }) do
         local distribution = ProceduralDistributions.list[target.name]
         local items = distribution and distribution.items
@@ -167,3 +170,16 @@ local function addBlankVHS()
 end
 
 Events.OnPreDistributionMerge.Add(addBlankVHS)
+
+local function addGigamartVHS()
+    local gigamart = SuburbsDistributions and SuburbsDistributions.gigamart
+    local shelves = gigamart and gigamart.shelves
+    local procList = shelves and shelves.procList
+    if not procList then return end
+    for _, entry in ipairs(procList) do
+        if entry.name == "CrateVHSTapes" then return end
+    end
+    procList[#procList + 1] = { name = "CrateVHSTapes", min = 0, max = 1, weightChance = 15 }
+end
+
+Events.OnPreDistributionMerge.Add(addGigamartVHS)
