@@ -1,0 +1,14 @@
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+*.pyc
+__pycache__/
+node_modules/
+build/
+dist/
+*.exe
+*.dll
+*.bat
+*.zip

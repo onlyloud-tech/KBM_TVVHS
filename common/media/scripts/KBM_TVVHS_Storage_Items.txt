@@ -1,0 +1,17 @@
+module KBM
+{
+    item VHSCollectionBox
+    {
+        ItemType = base:container,
+        DisplayName = VHS Collection Box,
+        DisplayCategory = Container,
+        Icon = Shoebox,
+        Weight = 0.5,
+        Capacity = 4,
+        WeightReduction = 0,
+        CloseSound = CloseShoeBox,
+        OpenSound = OpenShoeBox,
+        PutInSound = StoreItemShoeBox,
+        WorldStaticModel = Shoebox,
+    }
+}

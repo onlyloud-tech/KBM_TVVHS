@@ -1,0 +1,9 @@
+module KBM
+{
+    model VhsTape
+    {
+        mesh = WorldItems/VhsTape,
+        texture = KBM_VHSTape_001,
+        scale = 0.0006,
+    }
+}

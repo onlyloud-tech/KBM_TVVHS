@@ -1,0 +1,2 @@
+RecMedia = RecMedia or {}
+

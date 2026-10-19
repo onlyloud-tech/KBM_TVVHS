@@ -1,0 +1,66 @@
+module KBM
+{
+    model KBM_Camcorder_Hand
+    {
+        mesh = WorldItems/CameraExpensive,
+        scale = 0.2333,
+        attachment Bip01_Prop1
+        {
+            offset = -0.0300 -0.0028 0.0400,
+            rotate = -20.0000 180.0000 0.0000,
+        }
+        attachment Bip01_Prop2
+        {
+            offset = -0.0300 -0.0028 0.0400,
+            rotate = -20.0000 180.0000 0.0000,
+        }
+    }
+
+    model KBM_Camcorder2_Hand
+    {
+        mesh = WorldItems/KBM_Camcorder2_Hand,
+        texture = KBM_Camcorder2_Atlas,
+        scale = 0.6,
+        attachment Bip01_Prop1
+        {
+            offset = 0.0000 0.0000 0.0200,
+            rotate = -35.0000 0.0000 -3.5000,
+        }
+        attachment Bip01_Prop2
+        {
+            offset = 0.0000 0.0000 0.0200,
+            rotate = -35.0000 0.0000 -3.5000,
+        }
+    }
+
+    model KBM_Camcorder2_World
+    {
+        mesh = WorldItems/KBM_Camcorder2_World,
+        texture = KBM_Camcorder2_Atlas,
+        scale = 0.6,
+    }
+
+    model KBM_Camcorder3_Hand
+    {
+        mesh = WorldItems/KBM_Camcorder3_Hand,
+        texture = KBM_Camcorder3_Atlas,
+        scale = 0.6,
+        attachment Bip01_Prop1
+        {
+            offset = 0.0000 0.0100 0.0100,
+            rotate = -30.0000 -5.0000 -2.7000,
+        }
+        attachment Bip01_Prop2
+        {
+            offset = 0.0000 0.0100 0.0100,
+            rotate = -30.0000 -5.0000 -2.7000,
+        }
+    }
+
+    model KBM_Camcorder3_World
+    {
+        mesh = WorldItems/KBM_Camcorder3_World,
+        texture = KBM_Camcorder3_Atlas,
+        scale = 0.6,
+    }
+}

@@ -1,0 +1,47 @@
+module KBM
+{
+    item Camcorder
+    {
+        ItemType = base:normal,
+        DisplayName = KnoxBox Camcorder,
+        DisplayCategory = Electronics,
+        Icon = CameraExpensive,
+        StaticModel = KBM_Camcorder_Hand,
+        WorldStaticModel = CameraExpensive_Ground,
+        Weight = 0.8,
+    }
+
+    item Camcorder2
+    {
+        ItemType = base:normal,
+        DisplayName = KnoxBox Camcorder II,
+        DisplayCategory = Electronics,
+        Icon = KBM_Camcorder2,
+        StaticModel = KBM_Camcorder2_Hand,
+        WorldStaticModel = KBM_Camcorder2_World,
+        Weight = 0.8,
+    }
+
+    item Camcorder3
+    {
+        ItemType = base:normal,
+        DisplayName = KnoxBox Camcorder III,
+        DisplayCategory = Electronics,
+        Icon = KBM_Camcorder3,
+        StaticModel = KBM_Camcorder3_Hand,
+        WorldStaticModel = KBM_Camcorder3_World,
+        Weight = 0.8,
+    }
+
+    item RecordedVHS
+    {
+        ItemType = base:normal,
+        DisplayName = VHS - Home Recording,
+        DisplayCategory = Entertainment,
+        Icon = vhs_tape,
+        Weight = 0.3,
+        MediaCategory = Retail-VHS,
+        WorldStaticModel = VhsTape,
+        OnCreate = KBMGB_OnCreateRecordedVHS,
+    }
+}

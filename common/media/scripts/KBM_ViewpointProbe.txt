@@ -1,0 +1,32 @@
+module KBM
+{
+    model ScreenTV
+    {
+        mesh = WorldItems/KBM_TV93_Viewpoint,
+        texture = KBM_TV93_Atlas,
+        scale = 1.0,
+    }
+    item ScreenTV
+    {
+        DisplayName = KnoxBox 3D Television,
+        DisplayCategory = Electronics,
+        ItemType = base:radio,
+        Icon = Television,
+        Weight = 10.0,
+        AcceptMediaType = 1,
+        BaseVolumeRange = 12,
+        IsPortable = false,
+        IsTelevision = true,
+        UsesBattery = false,
+        TwoWay = false,
+        MicRange = 0,
+        TransmitRange = 0,
+        MinChannel = 200,
+        MaxChannel = 1000000,
+        UseDelta = 0.009,
+        WorldObjectSprite = appliances_television_01_4,
+        StaticModel = ScreenTV,
+        WorldStaticModel = ScreenTV,
+    }
+}
+

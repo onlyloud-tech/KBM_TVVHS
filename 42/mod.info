@@ -1,0 +1,9 @@
+name=KnoxBox Television and VHS
+id=KBM_TVVHS
+description=VHS movies and camcorder recordings on televisions, with an optional 3D TV for Viewpoint.
+modversion=1.0.0-beta
+poster=poster.png
+require=KBM_Core
+javaJarFile=../common/media/java/KBMViewpointScreenProbe.jar
+javaPkgName=com.knoxboxprobe
+ZBVersionMin=2.3.4

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animNode>
+    <m_Name>KBMRecordCamcorder3</m_Name>
+    <m_AnimName>Bob_KBM_RecordCamcorder3</m_AnimName>
+    <m_Looped>true</m_Looped>
+    <m_BlendTime>0.35</m_BlendTime>
+    <m_SpeedScale>0.48</m_SpeedScale>
+    <m_SyncTrackingEnabled>false</m_SyncTrackingEnabled>
+    <m_Conditions>
+        <m_Name>PerformingAction</m_Name>
+        <m_Type>STRING</m_Type>
+        <m_Value>kbmrecordcamcorder3</m_Value>
+    </m_Conditions>
+    <m_SubStateBoneWeights>
+        <boneName>Bip01_Spine</boneName>
+        <weight>0.50</weight>
+        <includeDescendants>false</includeDescendants>
+    </m_SubStateBoneWeights>
+    <m_SubStateBoneWeights>
+        <boneName>Bip01_Spine1</boneName>
+    </m_SubStateBoneWeights>
+    <m_SubStateBoneWeights>
+        <boneName>Bip01_Prop1</boneName>
+    </m_SubStateBoneWeights>
+    <m_SubStateBoneWeights>
+        <boneName>Bip01_Prop2</boneName>
+    </m_SubStateBoneWeights>
+</animNode>
