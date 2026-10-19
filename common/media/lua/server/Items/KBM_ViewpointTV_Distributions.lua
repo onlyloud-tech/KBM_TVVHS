@@ -140,3 +140,29 @@ local function addVHSCollectionBox()
 end
 
 Events.OnPreDistributionMerge.Add(addVHSCollectionBox)
+
+local function addBlankVHS()
+    for _, target in ipairs({
+        { name = "CrateVHSTapes", weight = 12 },
+        { name = "MovieRentalShelves", weight = 8 },
+        { name = "CameraStoreDisplayCase", weight = 5 },
+    }) do
+        local distribution = ProceduralDistributions.list[target.name]
+        local items = distribution and distribution.items
+        if items then
+            local found = false
+            for i = 1, #items, 2 do
+                if items[i] == "KBM.BlankVHS" then
+                    found = true
+                    break
+                end
+            end
+            if not found then
+                items[#items + 1] = "KBM.BlankVHS"
+                items[#items + 1] = target.weight
+            end
+        end
+    end
+end
+
+Events.OnPreDistributionMerge.Add(addBlankVHS)

@@ -1,9 +1,10 @@
--- Same-session camera proof: record the visible game view and create a VHS.
+-- Record the visible game view onto a blank VHS loaded in a camcorder.
 require "KBMGB/Movie/RecordableTape"
 require "ISUI/ISUIHandler"
 require "ISUI/ISTextBox"
 require "TimedActions/ISBaseTimedAction"
 local TAPE_TYPE = "KBM.RecordedVHS"
+local BLANK_TAPE_TYPE = "KBM.BlankVHS"
 local CAMERA_TYPES = {
     ["KBM.Camcorder"] = true,
     ["KBM.Camcorder2"] = true,
@@ -20,6 +21,7 @@ local WRITING_TOOLS = {
 }
 local pendingId = nil
 local pendingPlayer = nil
+local pendingCamera = nil
 local poseAction = nil
 local hudHiddenByCamera = false
 
@@ -76,6 +78,36 @@ local function hasWritingTool(player)
     return false
 end
 
+local function hasBlankLoaded(camera)
+    return camera and camera:getModData().KBMBlankVHSLoaded == true
+end
+
+local function insertBlankTape(args)
+    local player, camera = args.player, args.camera
+    if not player or not camera or hasBlankLoaded(camera) then return end
+    local inventory = player:getInventory()
+    local blank = inventory and inventory:getFirstTypeRecurse(BLANK_TAPE_TYPE) or nil
+    if not blank then
+        notify(player, "A blank VHS tape is needed.")
+        return
+    end
+    local container = blank:getContainer()
+    if not container then return end
+    container:Remove(blank)
+    camera:getModData().KBMBlankVHSLoaded = true
+    notify(player, "Blank VHS tape inserted.")
+end
+
+local function ejectBlankTape(args)
+    local player, camera = args.player, args.camera
+    if not player or not hasBlankLoaded(camera) then return end
+    local inventory = player:getInventory()
+    if inventory and inventory:AddItem(BLANK_TAPE_TYPE) then
+        camera:getModData().KBMBlankVHSLoaded = nil
+        notify(player, "Blank VHS tape ejected.")
+    end
+end
+
 local function saveTapeLabel(args, button)
     if not button or button.internal ~= "OK" then return end
     local player, tape = args.player, args.tape
@@ -109,10 +141,17 @@ local CameraRecordingAction = ISBaseTimedAction:derive("KBMCameraRecordingAction
 
 function CameraRecordingAction:isValid()
     return self.camera and CAMERA_TYPES[self.camera:getFullType()] == true
+        and hasBlankLoaded(self.camera)
 end
 
 function CameraRecordingAction:start()
     local player = self.character
+
+    if not hasBlankLoaded(self.camera) then
+        notify(player, "Insert a blank VHS tape before recording.")
+        self:forceStop()
+        return
+    end
     local recorder = bridge()
     if not recorder then
         notify(player, "Camera bridge unavailable.")
@@ -138,6 +177,7 @@ function CameraRecordingAction:start()
     end
     pendingId = tostring(recorder.getRecordingId())
     pendingPlayer = player
+    pendingCamera = self.camera
     print("[KBMGB][Camera] Recording started. Press Alt+E to stop; 10-minute limit.")
     hideHudForRecording()
 end
@@ -181,13 +221,17 @@ end
 
 local function startRecording(args)
     local player = args and args.player
+    if not args or not hasBlankLoaded(args.camera) then
+        notify(player, "Insert a blank VHS tape before recording.")
+        return
+    end
     local recorder = bridge()
     if not recorder then notify(player, "Camera bridge unavailable; check the Movies & TV addon."); return end
     if isClient and isClient() then
-        notify(player, "This camera test currently supports single-player saves.")
+        notify(player, "Camcorder recording currently supports single-player saves.")
         return
     end
-    if poseAction then return end
+    if poseAction or pendingId then return end
     poseAction = CameraRecordingAction:new(player, args.camera)
     ISTimedActionQueue.add(poseAction)
 end
@@ -232,8 +276,26 @@ local function contextMenu(playerNum, context, items)
     local recorder = bridge()
     if recorder and recorder.isRecording and recorder.isRecording() then
         context:addOption("Stop camera recording", { player = player }, stopRecording)
-    elseif not (recorder and recorder.isFinalizing and recorder.isFinalizing()) then
-        context:addOption("Record video with camcorder", { player = player, camera = camera }, startRecording)
+    elseif not pendingId and not (recorder and recorder.isFinalizing and recorder.isFinalizing()) then
+        local args = { player = player, camera = camera }
+        if hasBlankLoaded(camera) then
+            context:addOption("Eject blank VHS tape", args, ejectBlankTape)
+        else
+            local insert = context:addOption("Insert blank VHS tape", args, insertBlankTape)
+            if not player:getInventory():containsTypeRecurse(BLANK_TAPE_TYPE) then
+                insert.notAvailable = true
+                local tooltip = ISWorldObjectContextMenu.addToolTip()
+                tooltip.description = "Requires a blank VHS tape in inventory."
+                insert.toolTip = tooltip
+            end
+        end
+        local record = context:addOption("Record video with camcorder", args, startRecording)
+        if not hasBlankLoaded(camera) then
+            record.notAvailable = true
+            local tooltip = ISWorldObjectContextMenu.addToolTip()
+            tooltip.description = "Insert a blank VHS tape first."
+            record.toolTip = tooltip
+        end
     end
 end
 
@@ -260,6 +322,7 @@ local function finishTick()
             tape:getModData().KBMRecordingLabel = "Home Recording"
             if KBMGB_OnCreateRecordedVHS then KBMGB_OnCreateRecordedVHS(tape) end
             if tape.setName then pcall(tape.setName, tape, "VHS - Home Recording") end
+            if pendingCamera then pendingCamera:getModData().KBMBlankVHSLoaded = nil end
             local audioMessage = recorder.hasCapturedAudio and recorder.hasCapturedAudio()
                 and " with audio" or " without captured audio"
             notify(player, "Recording saved" .. audioMessage .. " to a VHS tape. Frames: "
@@ -268,11 +331,11 @@ local function finishTick()
         else
             notify(player, "Recording saved, but VHS creation failed: " .. pendingId)
         end
-        pendingId, pendingPlayer = nil, nil
+        pendingId, pendingPlayer, pendingCamera = nil, nil, nil
     elseif not recorder.isRecording() and not recorder.isFinalizing() then
         local errorText = recorder.getError and recorder.getError() or "unknown error"
         notify(pendingPlayer, "Recording failed: " .. tostring(errorText))
-        pendingId, pendingPlayer = nil, nil
+        pendingId, pendingPlayer, pendingCamera = nil, nil, nil
     end
 end
 

@@ -16,4 +16,6 @@ On first launch, Windows Defender SmartScreen may warn that the converter is unr
 
 For the KnoxBox 3D Television, equip a base-game TV remote and use its inventory action to open the KnoxBox remote for power, playback, pause, and volume controls.
 
+To make a home recording, find a blank VHS tape in VHS storage or a camera shop, then right-click a camcorder to insert it. Each completed recording uses one blank tape and creates a playable home-recording VHS. You can eject an unused blank from the camcorder.
+
 The mod includes no commercial movies. Only distribute movies and artwork for which you have redistribution rights.
