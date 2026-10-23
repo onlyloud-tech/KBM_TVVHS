@@ -1,4 +1,5 @@
 require "Items/ProceduralDistributions"
+local MoviePackRegistry = require "KBMGB/Movie/MoviePackRegistry"
 
 local function addTV()
     for _, target in ipairs({
@@ -183,3 +184,18 @@ local function addGigamartVHS()
 end
 
 Events.OnPreDistributionMerge.Add(addGigamartVHS)
+
+-- A loot roll can give a movie-pack VHS a random vanilla title. Reattach
+-- its registered media after the roll without removing any generated items.
+local function attachMoviePackMedia(_, _, container)
+    if not container or not instanceof(container, "ItemContainer") then return end
+    local items = container:getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item and MoviePackRegistry.get(item:getFullType()) and KBMGB_OnCreateBYOM then
+            KBMGB_OnCreateBYOM(item)
+        end
+    end
+end
+
+Events.OnFillContainer.Add(attachMoviePackMedia)

@@ -9,6 +9,13 @@ local VTUtils = require("KBMGB/System/VTUtils")
 local STATE_KEY = "KBMGB_TV_Movie"
 local RECORDABLE_TYPE = "KBM.RecordedVHS"
 local activeWindow = nil
+local activeTV = nil
+local captionTVs = {}
+local nearbySignals = {}
+local captionBridgeIssueLogged = false
+local captionActiveLogged = false
+local movieCaptionActive = false
+local deviceTextLogs = 0
 
 local function log(msg) print("[KBMGB][TVMovie] " .. tostring(msg)) end
 
@@ -42,6 +49,117 @@ local function getTape(tv)
     return fullType ~= "" and fullType or nil
 end
 
+local function isPlayingKnoxBoxMovie(tv)
+    local device = tv and tv.getDeviceData and tv:getDeviceData() or nil
+    if not Registry.isTape(getTape(tv)) then return false end
+    if tv == activeTV and activeWindow then return true end
+    return device and device.isPlayingMedia and device:isPlayingMedia()
+end
+
+local function isViewpointMovieActive()
+    local playback = _G.KBMViewpointTVPlayback
+    if not playback or not playback.isActive then return false end
+    local ok, active = pcall(playback.isActive)
+    return ok and active == true
+end
+
+local function captionBridge()
+    if type(KBMTVCaptionBridge) == "table" then return KBMTVCaptionBridge end
+    if type(com) == "table" and type(com.knoxboxprobe) == "table" then
+        return com.knoxboxprobe.KBMTVCaptionBridge
+    end
+    return nil
+end
+
+local function clearMovieCaptions(tv)
+    if not isPlayingKnoxBoxMovie(tv) then return false end
+    local bridge = captionBridge()
+    local ok, issue
+    if bridge then ok, issue = pcall(function() return bridge.clear(tv) end)
+    else ok, issue = false, "bridge unavailable" end
+    if not ok and not captionBridgeIssueLogged then
+        log("movie caption suppression unavailable: " .. tostring(issue))
+        captionBridgeIssueLogged = true
+    end
+    return true
+end
+
+local captionScanTick = 0
+local function updateMovieCaptions()
+    local movieActive = isViewpointMovieActive()
+    for tv in pairs(captionTVs) do
+        if clearMovieCaptions(tv) then movieActive = true
+        else captionTVs[tv] = nil end
+    end
+    if movieActive then
+        if not captionActiveLogged then
+            log("movie caption suppression active")
+            captionActiveLogged = true
+        end
+        -- Vanilla broadcast text can come from another device near the movie TV.
+        -- Clear local device captions only while a KnoxBox movie is playing.
+        local bridge = captionBridge()
+        if bridge then
+            for signal in pairs(nearbySignals) do
+                pcall(function() bridge.clear(signal) end)
+            end
+        end
+    else
+        captionActiveLogged = false
+    end
+    movieCaptionActive = movieActive
+
+    -- Pick up a movie that was already playing when this client loaded the area.
+    captionScanTick = captionScanTick + 1
+    if captionScanTick < 60 then return end
+    captionScanTick = 0
+    local player = getPlayer()
+    local cell = player and player:getCell() or nil
+    if not cell then return end
+    local z = math.floor(player:getZ())
+    local x, y = math.floor(player:getX()), math.floor(player:getY())
+    nearbySignals = {}
+    for sx = x - 10, x + 10 do
+        for sy = y - 10, y + 10 do
+            local square = cell:getGridSquare(sx, sy, z)
+            local objects = square and square:getObjects() or nil
+            if objects then
+                for i = 0, objects:size() - 1 do
+                    local tv = objects:get(i)
+                    if tv and tv.getDeviceData and tv.getChatElement then
+                        nearbySignals[tv] = true
+                    end
+                    if VTUtils.isTelevisionObject(tv) and isPlayingKnoxBoxMovie(tv) then
+                        captionTVs[tv] = true
+                        clearMovieCaptions(tv)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function onDeviceText(_guid, _codes, x, y, z, line)
+    if not movieCaptionActive then return end
+    if deviceTextLogs < 8 then
+        log("movie device text source=" .. tostring(x) .. "," .. tostring(y)
+            .. "," .. tostring(z) .. " line=" .. tostring(line))
+        deviceTextLogs = deviceTextLogs + 1
+    end
+    local player = getPlayer()
+    local cell = player and player:getCell() or nil
+    local square = cell and x and y and z and cell:getGridSquare(math.floor(x), math.floor(y), math.floor(z)) or nil
+    local objects = square and square:getObjects() or nil
+    local bridge = captionBridge()
+    if not objects or not bridge then return end
+    for i = 0, objects:size() - 1 do
+        local signal = objects:get(i)
+        if signal and signal.getDeviceData and signal.getChatElement then
+            pcall(function() bridge.clear(signal) end)
+        end
+    end
+end
+
 local function entryForTV(tv)
     local fullType = getTape(tv)
     local entry = Registry.get(fullType)
@@ -60,6 +178,7 @@ end
 local function closeWindow()
     local win = activeWindow
     activeWindow = nil
+    activeTV = nil
     if win and win.close then pcall(win.close, win) end
 end
 
@@ -76,6 +195,8 @@ local function openWindow(tv)
     pcall(win.addToUIManager, win)
     if win.bringToFront then pcall(win.bringToFront, win) end
     activeWindow = win
+    activeTV = tv
+    captionTVs[tv] = true
     log("opened " .. tostring(entry.itemType) .. " recording=" .. tostring(entry.recordingId or ""))
 end
 
@@ -127,6 +248,7 @@ function ISDeviceMediaAction:invoke()
             if before then restoreEjectedTape(self.character, before, ejectedId, ejectedLabel) end
             setTape(tv, "")
             closeWindow()
+            captionTVs[tv] = nil
             log("tape ejected")
         end
         return
@@ -156,7 +278,8 @@ function ISRadioAction:performTogglePlayMedia()
     if not Registry.isTape(fullType) then return end
     local nowPlaying = deviceData and deviceData.isPlayingMedia and deviceData:isPlayingMedia()
     if nowPlaying and not wasPlaying then openWindow(tv)
-    elseif not nowPlaying and wasPlaying then closeWindow(); log("playback stopped") end
+    elseif not nowPlaying and wasPlaying then closeWindow(); captionTVs[tv] = nil; log("playback stopped") end
+    if nowPlaying and isPlayingKnoxBoxMovie(tv) then captionTVs[tv] = true end
 end
 
 local function onContextMenu(_playerNum, context, worldObjects, test)
@@ -173,3 +296,5 @@ local function onContextMenu(_playerNum, context, worldObjects, test)
 end
 
 Events.OnFillWorldObjectContextMenu.Add(onContextMenu)
+Events.OnTick.Add(updateMovieCaptions)
+Events.OnDeviceText.Add(onDeviceText)

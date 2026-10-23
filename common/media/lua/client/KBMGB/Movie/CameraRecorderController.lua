@@ -178,6 +178,9 @@ function CameraRecordingAction:start()
     pendingId = tostring(recorder.getRecordingId())
     pendingPlayer = player
     pendingCamera = self.camera
+    local micEnabled = getCore and getCore():getOptionVoiceEnable() == true
+    notify(player, micEnabled and "Recording started; microphone capture enabled by VOIP setting."
+        or "Recording started; microphone capture disabled by VOIP setting.")
     print("[KBMGB][Camera] Recording started. Press Alt+E to stop; 10-minute limit.")
     hideHudForRecording()
 end

@@ -16,6 +16,7 @@ end
 local RECORDING_TYPE = "KBM.RecordedVHS"
 local STATE_KEY = "KBMViewpointTape"
 local activeDevice, activeEntry, activeAudio, audioSegment = nil, nil, nil, -1
+local activeDisplayItem, activeDisplayBaseModel = nil, nil
 local activePaused = false
 local activeWatchReward = nil
 local audioStartPending = false
@@ -98,6 +99,11 @@ local function entryFor(device)
     }
 end
 local function stop()
+    if activeDisplayItem and activeDisplayBaseModel then
+        pcall(activeDisplayItem.setWorldStaticModel,
+            activeDisplayItem, activeDisplayBaseModel)
+    end
+    activeDisplayItem, activeDisplayBaseModel = nil, nil
     if activeAudio then pcall(activeAudio.stop) end
     local p = probe()
     if p then p.stop() end
@@ -122,6 +128,23 @@ local function start(device)
         log("video load failed: " .. tostring(p.getStatus()))
         return
     end
+    local item = itemOf(device)
+    local fullType = item and item.getFullType and item:getFullType() or TV_TYPE
+    local module = fullType == LEGACY_TV_TYPE and "KBMViewpointProbe" or "KBM"
+    local display = module .. ".ScreenTV"
+    if item and item.setWorldStaticModel and p.setTvDisplay then
+        local original = item.getWorldStaticModel and item:getWorldStaticModel() or nil
+        local playingModel = display .. "Playing"
+        local changed = pcall(item.setWorldStaticModel, item, playingModel)
+        if changed then
+            activeDisplayItem = item
+            activeDisplayBaseModel = original and tostring(original):gsub("Playing$", "") or display
+            display = playingModel
+        else
+            log("could not switch this TV to its private playback model")
+        end
+    end
+    if p.setTvDisplay then pcall(p.setTvDisplay, display) end
     activeDevice, activeEntry, activeAudio, audioSegment = device, entry, audioBridge(), -1
     activePaused = false
     activeWatchReward = WatchReward.new()
@@ -168,6 +191,17 @@ local remoteControls = {
     togglePause = togglePause,
     isPaused = function(device) return device == activeDevice and activePaused end,
     seek = seek,
+}
+-- The native Recorded Media play flag can expire before the Java movie does.
+-- Other KnoxBox UI code uses this state to follow actual 3D playback.
+_G.KBMViewpointTVPlayback = {
+    isActive = function()
+        if not activeEntry then return false end
+        local p = probe()
+        if not p then return false end
+        local ok, finished = pcall(p.isFinished)
+        return ok and finished ~= true
+    end,
 }
 local function snapshot(character)
     local seen = {}

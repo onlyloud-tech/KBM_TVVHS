@@ -24,6 +24,13 @@ local BUTTONS = {
     { x=584, y=647, w=37, h=41, action="pause" },
 }
 
+local MOVEMENT_KEYS = {
+    [Keyboard.KEY_W] = true, [Keyboard.KEY_A] = true,
+    [Keyboard.KEY_S] = true, [Keyboard.KEY_D] = true,
+    [Keyboard.KEY_UP] = true, [Keyboard.KEY_DOWN] = true,
+    [Keyboard.KEY_LEFT] = true, [Keyboard.KEY_RIGHT] = true,
+}
+
 local function computeWindowSize()
     local sw, sh = VTUtils.safeGetScreen()
     local scale = math.min((sw * 0.95) / BASE_W, (sh * 0.95) / BASE_H)
@@ -53,11 +60,41 @@ function TVMovieWindow:new(monitorUI, AppModule, args)
     o.signalTex = getTexture("media/textures/Item_tv_overlay_kbm.png")
     o.noSignalTex = getTexture("media/textures/Item_tv_overlay_no_signal_kbm.png")
     o.overlayTex = o.noSignalTex or o.signalTex
-    VTUtils.setPlayerLocked(o.playerObj, true)
+    o.hiddenForMovement = false
+    o.playerX = o.playerObj and o.playerObj.getX and o.playerObj:getX() or nil
+    o.playerY = o.playerObj and o.playerObj.getY and o.playerObj:getY() or nil
     return o
 end
 
+function TVMovieWindow:hideForMovement()
+    if self.hiddenForMovement then return end
+    self.hiddenForMovement = true
+    self.captureMouse = false
+    if self.setCapture then self:setCapture(false) end
+    if self.setWantKeyEvents then self:setWantKeyEvents(false) end
+    self:setVisible(false)
+end
+
+function TVMovieWindow:continueMovie()
+    if not self.hiddenForMovement then return end
+    self.hiddenForMovement = false
+    self.captureMouse = true
+    self.playerX = self.playerObj and self.playerObj.getX and self.playerObj:getX() or nil
+    self.playerY = self.playerObj and self.playerObj.getY and self.playerObj:getY() or nil
+    self:setVisible(true)
+    self:_ensureTopAndFocus()
+    if self.bringToFront then self:bringToFront() end
+end
+
 function TVMovieWindow:prerender()
+    local player = self.playerObj
+    if player and self.playerX and self.playerY and player.getX and player.getY then
+        if math.abs(player:getX() - self.playerX) > 0.01
+            or math.abs(player:getY() - self.playerY) > 0.01 then
+            self:hideForMovement()
+            return
+        end
+    end
     AppWindowBase.prerender(self)
     local sx, sy = self.width / BASE_W, self.height / BASE_H
     self:drawRect(
@@ -135,15 +172,32 @@ function TVMovieWindow:onRightMouseDown(_x, _y)
 end
 function TVMovieWindow:onMouseUp(_x, _y) return true end
 function TVMovieWindow:onMouseUpOutside(_x, _y) return true end
-function TVMovieWindow:onKeyDown(_key) return true end
+function TVMovieWindow:isKeyConsumed(key)
+    return key == Keyboard.KEY_BACK or key == Keyboard.KEY_DELETE
+        or key == Keyboard.KEY_ESCAPE or key == Keyboard.KEY_SPACE or key == Keyboard.KEY_R
+end
+
+function TVMovieWindow:onKeyDown(key)
+    if MOVEMENT_KEYS[key] then self:hideForMovement() end
+    return false
+end
 
 function TVMovieWindow:onKeyPress(key)
+    if MOVEMENT_KEYS[key] then self:hideForMovement(); return false end
     if key == Keyboard.KEY_BACK or key == Keyboard.KEY_DELETE or key == Keyboard.KEY_ESCAPE then
         self:close()
         return true
     end
-    if self.app then AppHost.onKey(self.app, self, key) end
-    return true
+    if self.app then return AppHost.onKey(self.app, self, key) == true end
+    return false
+end
+
+function TVMovieWindow:close()
+    -- This window never locked movement, so closing it must not clear another
+    -- device's player lock through AppWindowBase.close().
+    self.playerObj = nil
+    AppWindowBase.close(self)
+    if self.onClosed then self.onClosed(self) end
 end
 
 return TVMovieWindow

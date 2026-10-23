@@ -6,6 +6,12 @@ module KBM
         texture = KBM_TV93_Atlas,
         scale = 1.0,
     }
+    model ScreenTVPlaying
+    {
+        mesh = WorldItems/KBM_TV93_Viewpoint,
+        texture = KBM_TV93_Playing,
+        scale = 1.0,
+    }
     item ScreenTV
     {
         DisplayName = KnoxBox 3D Television,

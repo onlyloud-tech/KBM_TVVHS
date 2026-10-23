@@ -1,5 +1,6 @@
 local VTUtils = require("KBMGB/System/VTUtils")
 local WatchReward = require("KBMGB/Movie/WatchReward")
+local WorldAudio = require("KBMGB/Movie/WorldAudio")
 
 local JavaMoviePlayerApp = {}
 JavaMoviePlayerApp.__index = JavaMoviePlayerApp
@@ -46,9 +47,11 @@ function JavaMoviePlayerApp:_stopAudio()
 end
 
 function JavaMoviePlayerApp:_applyVolume()
-    if self.audio then pcall(self.audio.setVolume, self.volume) end
+    local player = self.args.playerObj or (getPlayer and getPlayer())
+    local volume = self.volume * WorldAudio.gain(self.args.tv, player)
+    if self.audio then pcall(self.audio.setVolume, volume) end
     if self._activeSoundHandle then
-        VTUtils.applyHandleVolume(self._activeSoundHandle, self.volume)
+        VTUtils.applyHandleVolume(self._activeSoundHandle, volume)
     end
 end
 
