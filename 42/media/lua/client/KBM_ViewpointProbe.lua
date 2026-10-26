@@ -4,9 +4,12 @@ if _G.KBMViewpointTVPatchLoaded then return end
 _G.KBMViewpointTVPatchLoaded = true
 require "TimedActions/ISDeviceMediaAction"
 require "RadioCom/ISRadioAction"
-require "RadioCom/ISRadioWindow"
+local DeviceWindow = require "KBMGB/Movie/DeviceWindow"
 local RemoteOverlay = require "KBM_ViewpointTVRemote"
 local WatchReward = require "KBMGB/Movie/WatchReward"
+local WorldAudio = require "KBMGB/Movie/WorldAudio"
+local ViewMode = require "KBMGB/Movie/ViewMode"
+local PremiumScreen = require "KBMGB/Movie/PremiumScreen"
 
 local TV_TYPE = "KBM.ScreenTV"
 local LEGACY_TV_TYPE = "KBMViewpointProbe.ScreenTV"
@@ -17,6 +20,7 @@ local RECORDING_TYPE = "KBM.RecordedVHS"
 local STATE_KEY = "KBMViewpointTape"
 local activeDevice, activeEntry, activeAudio, audioSegment = nil, nil, nil, -1
 local activeDisplayItem, activeDisplayBaseModel = nil, nil
+local overlayWindow
 local activePaused = false
 local activeWatchReward = nil
 local audioStartPending = false
@@ -25,9 +29,9 @@ local lastStatus = ""
 
 local function log(message) print("[KBMViewpointTV] " .. tostring(message)) end
 local function probe()
-    if type(KBMViewpointScreenProbe) == "table" then return KBMViewpointScreenProbe end
+    if type(KBMMovieScreenBridge) == "table" then return KBMMovieScreenBridge end
     if type(com) == "table" and type(com.knoxboxprobe) == "table" then
-        return com.knoxboxprobe.KBMViewpointScreenProbe
+        return com.knoxboxprobe.KBMMovieScreenBridge
     end
 end
 local function registry()
@@ -99,6 +103,11 @@ local function entryFor(device)
     }
 end
 local function stop()
+    PremiumScreen.stop()
+    if overlayWindow and _G.KBMMPVanillaPlayback then
+        _G.KBMMPVanillaPlayback.close()
+    end
+    overlayWindow = nil
     if activeDisplayItem and activeDisplayBaseModel then
         pcall(activeDisplayItem.setWorldStaticModel,
             activeDisplayItem, activeDisplayBaseModel)
@@ -113,8 +122,18 @@ local function stop()
     audioStartPending = false
     lastDriftLogFrame = -100000
 end
-local function start(device)
-    local entry = entryFor(device)
+local function start(device, remoteEntry)
+    if isClient() and _G.KBMMPClient and not remoteEntry then return _G.KBMMPClient.request(device, "Play") end
+    local entry = remoteEntry or entryFor(device)
+    if entry and not ViewMode.isViewpointActive() then
+        local overlay = _G.KBMMPVanillaPlayback
+        if overlay then
+            stop()
+            overlayWindow = overlay.open(device, entry)
+            activeDevice = device
+        end
+        return
+    end
     local p = probe()
     if not p or not entry then log("no playable tape"); return end
     stop()
@@ -129,9 +148,11 @@ local function start(device)
         return
     end
     local item = itemOf(device)
+    local premium = PremiumScreen.canRender(device)
     local fullType = item and item.getFullType and item:getFullType() or TV_TYPE
     local module = fullType == LEGACY_TV_TYPE and "KBMViewpointProbe" or "KBM"
     local display = module .. ".ScreenTV"
+    if premium then display = "KBMViewpointProbe.ScreenTVPlaying" end
     if item and item.setWorldStaticModel and p.setTvDisplay then
         local original = item.getWorldStaticModel and item:getWorldStaticModel() or nil
         local playingModel = display .. "Playing"
@@ -145,9 +166,14 @@ local function start(device)
         end
     end
     if p.setTvDisplay then pcall(p.setTvDisplay, display) end
+    if premium and not PremiumScreen.start(device) then
+        stop()
+        log("Premium TV surface setup failed")
+        return
+    end
     activeDevice, activeEntry, activeAudio, audioSegment = device, entry, audioBridge(), -1
     activePaused = false
-    activeWatchReward = WatchReward.new()
+    activeWatchReward = not isClient() and WatchReward.new() or nil
     audioStartPending = true
     lastDriftLogFrame = -100000
     log("playing " .. tostring(entry.label or entry.itemType))
@@ -188,13 +214,40 @@ end
 
 local remoteControls = {
     isActive = function(device) return device == activeDevice and activeEntry ~= nil end,
-    togglePause = togglePause,
+    togglePause = function(device)
+        if isClient() and _G.KBMMPClient then return _G.KBMMPClient.request(device, "Pause") end
+        return togglePause(device)
+    end,
     isPaused = function(device) return device == activeDevice and activePaused end,
-    seek = seek,
+    seek = function(device, delta)
+        if isClient() and _G.KBMMPClient then return _G.KBMMPClient.request(device, "Seek", delta) end
+        return seek(device, delta)
+    end,
 }
 -- The native Recorded Media play flag can expire before the Java movie does.
 -- Other KnoxBox UI code uses this state to follow actual 3D playback.
 _G.KBMViewpointTVPlayback = {
+    mpVersion = 1,
+    startRemote = start,
+    stopRemote = stop,
+    stopDevice = function(device) if activeDevice == device then stop() end end,
+    diagnostics = function()
+        local p = probe()
+        return p and p.getCurrentFrame() or 0,
+            p and p.getDisplayedFrame and p.getDisplayedFrame() or -1,
+            p and p.isFinished() or false
+    end,
+    position = function()
+        local p = probe()
+        return p and math.max(0, (p.getCurrentFrame()-1)/math.max(1,p.getFps())) or 0
+    end,
+    seekRemote = function(seconds)
+        local p = probe()
+        if p then return seek(activeDevice, seconds-math.max(0,(p.getCurrentFrame()-1)/math.max(1,p.getFps()))) end
+    end,
+    pauseRemote = function(paused)
+        if activePaused ~= paused then togglePause(activeDevice) end
+    end,
     isActive = function()
         if not activeEntry then return false end
         local p = probe()
@@ -308,12 +361,15 @@ local function soundUpdate()
         local ok, positionMs = pcall(activeAudio.getPositionMs)
         if ok and tonumber(positionMs) and tonumber(positionMs) >= 0 then
             local frame = tonumber(p.getCurrentFrame()) or 0
-            local displayed = p.getDisplayedFrame and tonumber(p.getDisplayedFrame()) or frame
+            local displayed = PremiumScreen.getDisplayedFrame()
+            if displayed == nil then
+                displayed = p.getDisplayedFrame and tonumber(p.getDisplayedFrame()) or frame
+            end
             local fps = math.max(1, tonumber(p.getFps()) or 1)
             local displayedSeconds = math.max(0, (displayed - 1) / fps)
             local displayedOffsetMs = math.floor((displayedSeconds - (single and 0 or segment * chunkSeconds)) * 1000)
             local driftMs = tonumber(positionMs) - displayedOffsetMs
-            if math.abs(driftMs) > 350 and frame - lastDriftLogFrame > fps * 10 then
+            if displayed > 0 and math.abs(driftMs) > 350 and frame - lastDriftLogFrame > fps * 10 then
                 log("A/V drift " .. math.floor(driftMs) .. "ms at displayed frame "
                     .. displayed .. " (decoded " .. frame .. ")")
                 lastDriftLogFrame = frame
@@ -322,6 +378,7 @@ local function soundUpdate()
     end
     local volume = activeDevice and activeDevice.getDeviceData
         and activeDevice:getDeviceData():getDeviceVolume() or 1
+    volume = volume * WorldAudio.gain(activeDevice, getPlayer())
     pcall(activeAudio.setVolume, volume)
 end
 
@@ -346,8 +403,21 @@ local audioTick = 0
 Events.OnRenderTick.Add(function()
     local p = probe()
     if not p then return end
+    if not isClient() and activeEntry and not ViewMode.isViewpointActive() and _G.KBMMPVanillaPlayback then
+        local device, entry, paused = activeDevice, activeEntry, activePaused
+        local seconds = math.max(0, (p.getCurrentFrame()-1)/math.max(1, p.getFps()))
+        stop()
+        -- Preserve playback, but leave watching in ISO to the context menu.
+        overlayWindow = _G.KBMMPVanillaPlayback.open(device, entry, true)
+        activeDevice = device
+        if _G.KBMMPVanillaPlayback.restorePosition then
+            _G.KBMMPVanillaPlayback.restorePosition(device, seconds, paused)
+        end
+        log("handed Viewpoint movie to overlay at " .. tostring(seconds) .. "s")
+    end
     updateAudioClock(p)
     p.tick()
+    PremiumScreen.update()
     if activeEntry and activeWatchReward then
         local player = getPlayer and getPlayer() or nil
         local tvSquare = activeDevice and activeDevice.getSquare and activeDevice:getSquare() or nil
@@ -403,8 +473,10 @@ local function onWorldMenu(playerNum, context, worldObjects, test)
                     local radio = radioForWorldItem(square, item)
                     if radio then
                         local player = getSpecificPlayer(playerNum)
+                        local overlay = _G.KBMMPVanillaPlayback
+                        if overlay and overlay.addContinueOption then overlay.addContinueOption(context, radio) end
                         context:addOption("Device Options (KnoxBox TV)", player, function(p)
-                            ISRadioWindow.activate(p, radio)
+                            DeviceWindow.activate(p, radio)
                         end)
                         if radio:getDeviceData():canPlayerRemoteInteract(player) then
                             context:addOption("KnoxBox TV Remote", player, function(p)
@@ -471,9 +543,11 @@ local function onInventoryMenu(playerNum, context, items)
             local square = world and world.getSquare and world:getSquare() or nil
             local target = square and radioForWorldItem(square, item) or item
             if target and (target ~= item or instanceof(item, "Radio")) then
+                local overlay = _G.KBMMPVanillaPlayback
+                if overlay and overlay.addContinueOption then overlay.addContinueOption(context, target) end
                 local player = getSpecificPlayer(playerNum)
                 context:addOption("Device Options (KnoxBox TV)", player, function(p)
-                    ISRadioWindow.activate(p, target)
+                    DeviceWindow.activate(p, target)
                 end)
             end
             return

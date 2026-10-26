@@ -12,3 +12,9 @@ dist/
 *.dll
 *.bat
 *.zip
+*.class
+*.obj
+*.pdb
+*.ilk
+*.blend
+*.blend1

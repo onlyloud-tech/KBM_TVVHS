@@ -249,14 +249,23 @@ local function stopRecording(args)
     notify(args and args.player, "Finalizing recording...")
 end
 
-local function stopRecordingKey(key)
-    if key ~= Keyboard.KEY_E or not poseAction then return end
+local function toggleRecordingKey(key)
+    if key ~= Keyboard.KEY_E then return end
     if not (Keyboard.isKeyDown(Keyboard.KEY_LMENU)
         or Keyboard.isKeyDown(Keyboard.KEY_RMENU)) then return end
+    if getCore():isDoingTextEntry() then return end
     local recorder = bridge()
     if recorder and recorder.isRecording and recorder.isRecording() then
         stopRecording({ player = pendingPlayer })
+        return
     end
+    if poseAction or pendingId or (recorder and recorder.isFinalizing and recorder.isFinalizing()) then return end
+    local player = getSpecificPlayer(0)
+    if not player or player:isDead() then return end
+    local camera = player:getPrimaryHandItem()
+    if not camera or not CAMERA_TYPES[camera:getFullType()] then camera = player:getSecondaryHandItem() end
+    if not camera or not CAMERA_TYPES[camera:getFullType()] then return end
+    startRecording({player=player, camera=camera})
 end
 
 local function contextMenu(playerNum, context, items)
@@ -291,13 +300,6 @@ local function contextMenu(playerNum, context, items)
                 tooltip.description = "Requires a blank VHS tape in inventory."
                 insert.toolTip = tooltip
             end
-        end
-        local record = context:addOption("Record video with camcorder", args, startRecording)
-        if not hasBlankLoaded(camera) then
-            record.notAvailable = true
-            local tooltip = ISWorldObjectContextMenu.addToolTip()
-            tooltip.description = "Insert a blank VHS tape first."
-            record.toolTip = tooltip
         end
     end
 end
@@ -343,7 +345,7 @@ local function finishTick()
 end
 
 Events.OnFillInventoryObjectContextMenu.Add(contextMenu)
-Events.OnKeyPressed.Add(stopRecordingKey)
+Events.OnKeyPressed.Add(toggleRecordingKey)
 Events.OnRenderTick.Add(captureTick)
 Events.OnTick.Add(finishTick)
 print("[KBMGB][Camera] Camcorder recording actions loaded")

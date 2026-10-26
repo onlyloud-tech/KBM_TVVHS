@@ -1,0 +1,33 @@
+module KBM
+{
+    model PremiumScreen
+    {
+        mesh = WorldItems/KBM_PremiumScreen,
+        texture = KBM_PremiumScreen,
+        scale = 1.0,
+    }
+    item PremiumScreen
+    {
+        DisplayName = Movie Screen Surface,
+        ItemType = base:normal,
+        hidden = true,
+        Icon = Television,
+        Weight = 0.0,
+        WorldStaticModel = PremiumScreen,
+    }
+    model ValuTechScreen
+    {
+        mesh = WorldItems/KBM_ValuTechScreen,
+        texture = KBM_ValuTechScreen,
+        scale = 1.0,
+    }
+    item ValuTechScreen
+    {
+        DisplayName = Movie Screen Surface,
+        ItemType = base:normal,
+        hidden = true,
+        Icon = Television,
+        Weight = 0.0,
+        WorldStaticModel = ValuTechScreen,
+    }
+}

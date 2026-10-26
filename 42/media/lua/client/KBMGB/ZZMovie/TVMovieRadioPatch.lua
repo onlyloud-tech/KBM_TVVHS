@@ -5,6 +5,8 @@ local Registry = require("KBMGB/Movie/MovieRegistry")
 local MovieApp = require("KBMGB/Movie/JavaMoviePlayerApp")
 local MovieWindow = require("KBMGB/Movie/TVMovieWindow")
 local VTUtils = require("KBMGB/System/VTUtils")
+local ViewMode = require "KBMGB/Movie/ViewMode"
+local PremiumScreen = require "KBMGB/Movie/PremiumScreen"
 
 local STATE_KEY = "KBMGB_TV_Movie"
 local RECORDABLE_TYPE = "KBM.RecordedVHS"
@@ -16,6 +18,7 @@ local captionBridgeIssueLogged = false
 local captionActiveLogged = false
 local movieCaptionActive = false
 local deviceTextLogs = 0
+local pendingPosition
 
 local function log(msg) print("[KBMGB][TVMovie] " .. tostring(msg)) end
 
@@ -57,6 +60,7 @@ local function isPlayingKnoxBoxMovie(tv)
 end
 
 local function isViewpointMovieActive()
+    if _G.KBMMPClient and _G.KBMMPClient.isPlaying() then return true end
     local playback = _G.KBMViewpointTVPlayback
     if not playback or not playback.isActive then return false end
     local ok, active = pcall(playback.isActive)
@@ -86,6 +90,38 @@ end
 
 local captionScanTick = 0
 local function updateMovieCaptions()
+    -- A single-player movie may have been started in isometric view. Moving
+    -- into Viewpoint must hand off its existing timeline, not leave the UI up.
+    if not isClient() and activeWindow and activeTV and ViewMode.isViewpointActive()
+            and (VTUtils.isKnoxBox3DTV(activeTV) or PremiumScreen.canRender(activeTV)) then
+        local playback = _G.KBMViewpointTVPlayback
+        local app, tv, args = activeWindow.app, activeTV, activeWindow.args
+        if playback and args then
+            local seconds, paused = 0, false
+            if app and app.kbm then
+                seconds = math.max(0, (app.kbm.getCurrentFrame()-1)/math.max(1, app.kbm.getFps()))
+                paused = not app.kbm.isPlaying()
+            end
+            _G.KBMMPVanillaPlayback.close()
+            playback.startRemote(tv, args)
+            playback.seekRemote(seconds)
+            playback.pauseRemote(paused)
+            log("handed overlay to Viewpoint at " .. tostring(seconds) .. "s")
+        end
+    end
+    if pendingPosition then
+        if pendingPosition.window ~= activeWindow then pendingPosition = nil
+        elseif activeWindow.app and activeWindow.app.kbm and not activeWindow.app.err then
+            local app = activeWindow.app
+            local total, fps = app.kbm.getTotalFrames(), app.kbm.getFps()
+            if total > 0 and fps > 0 then
+                app.kbm.seekFrame(math.max(1, math.min(total, math.floor(pendingPosition.seconds*fps)+1)))
+                app:_stopAudio()
+                if pendingPosition.paused then app:pause() else app:play() end
+                pendingPosition = nil
+            end
+        end
+    end
     local movieActive = isViewpointMovieActive()
     for tv in pairs(captionTVs) do
         if clearMovieCaptions(tv) then movieActive = true
@@ -179,26 +215,71 @@ local function closeWindow()
     local win = activeWindow
     activeWindow = nil
     activeTV = nil
+    pendingPosition = nil
     if win and win.close then pcall(win.close, win) end
 end
 
-local function openWindow(tv)
-    -- The KnoxBox 3D TV plays on its model via KBM_ViewpointProbe. Opening the
-    -- 2D movie window as well covers the Viewpoint scene and duplicates playback.
-    if VTUtils.isKnoxBox3DTV(tv) then return end
-    local entry = entryForTV(tv)
+local function canContinue(tv)
+    if ViewMode.isViewpointActive() and (VTUtils.isKnoxBox3DTV(tv) or PremiumScreen.canRender(tv)) then return false end
+    return activeTV == tv and activeWindow ~= nil and activeWindow.hiddenForMovement == true
+end
+
+local function continueMovie(tv)
+    if not canContinue(tv) then return false end
+    activeWindow:continueMovie()
+    return true
+end
+
+local function openWindow(tv, remoteEntry, startHidden)
+    if isClient() and _G.KBMMPClient and not remoteEntry then return _G.KBMMPClient.watch(tv) end
+    if VTUtils.isKnoxBox3DTV(tv) and ViewMode.isViewpointActive() then return end
+    if ViewMode.isViewpointActive() and PremiumScreen.canRender(tv) then
+        local entry = remoteEntry or entryForTV(tv)
+        if entry and _G.KBMViewpointTVPlayback then _G.KBMViewpointTVPlayback.startRemote(tv, entry) end
+        return
+    end
+    if continueMovie(tv) then return end
+    local entry = remoteEntry or entryForTV(tv)
     if not entry then return end
     closeWindow()
-    local ok, win = pcall(MovieWindow.new, MovieWindow, nil, MovieApp, entry)
+    local args = {}
+    for key, value in pairs(entry) do args[key] = value end
+    args.tv = tv
+    local ok, win = pcall(MovieWindow.new, MovieWindow, nil, MovieApp, args)
     if not ok or not win then log("window creation failed: " .. tostring(win)); return end
     pcall(win.initialise, win)
+    if startHidden then win:hideForMovement() end
     pcall(win.addToUIManager, win)
-    if win.bringToFront then pcall(win.bringToFront, win) end
+    if not startHidden and win.bringToFront then pcall(win.bringToFront, win) end
     activeWindow = win
     activeTV = tv
+    win.onClosed = function()
+        if activeWindow == win then activeWindow, activeTV = nil, nil end
+    end
     captionTVs[tv] = true
     log("opened " .. tostring(entry.itemType) .. " recording=" .. tostring(entry.recordingId or ""))
 end
+
+_G.KBMMPVanillaPlayback = {
+    version = 1,
+    open = function(tv, entry, startHidden) openWindow(tv, entry, startHidden); return activeWindow end,
+    close = closeWindow,
+    canContinue = canContinue,
+    continueMovie = continueMovie,
+    restorePosition = function(tv, seconds, paused)
+        if activeTV == tv and activeWindow then
+            pendingPosition = {window=activeWindow, seconds=seconds, paused=paused}
+        end
+    end,
+    addContinueOption = function(context, tv)
+        if not canContinue(tv) then return end
+        if context.getOptionFromName and context:getOptionFromName("Continue Playing") then return end
+        context:addOption("Continue Playing", tv, function(device)
+            if isClient() and _G.KBMMPClient then _G.KBMMPClient.watch(device)
+            else continueMovie(device) end
+        end)
+    end,
+}
 
 local function inventorySnapshot(character)
     local seen = {}
@@ -248,6 +329,7 @@ function ISDeviceMediaAction:invoke()
             if before then restoreEjectedTape(self.character, before, ejectedId, ejectedLabel) end
             setTape(tv, "")
             closeWindow()
+            if _G.KBMViewpointTVPlayback then _G.KBMViewpointTVPlayback.stopDevice(tv) end
             captionTVs[tv] = nil
             log("tape ejected")
         end
@@ -277,22 +359,56 @@ function ISRadioAction:performTogglePlayMedia()
     local fullType = getTape(tv)
     if not Registry.isTape(fullType) then return end
     local nowPlaying = deviceData and deviceData.isPlayingMedia and deviceData:isPlayingMedia()
-    if nowPlaying and not wasPlaying then openWindow(tv)
-    elseif not nowPlaying and wasPlaying then closeWindow(); captionTVs[tv] = nil; log("playback stopped") end
+    -- The custom TV owns its SP playback routing in KBM_ViewpointProbe.
+    if nowPlaying and not wasPlaying and not VTUtils.isKnoxBox3DTV(tv) then openWindow(tv)
+    elseif not nowPlaying and wasPlaying then
+        closeWindow()
+        if _G.KBMViewpointTVPlayback then _G.KBMViewpointTVPlayback.stopDevice(tv) end
+        captionTVs[tv] = nil; log("playback stopped")
+    end
     if nowPlaying and isPlayingKnoxBoxMovie(tv) then captionTVs[tv] = true end
 end
 
 local function onContextMenu(_playerNum, context, worldObjects, test)
     if test then return end
+    if isClient() and _G.KBMMPClient then return end -- MP resolves the selected device/token.
     local tv = nil
     for _, object in ipairs(worldObjects) do
         if VTUtils.isTelevisionObject(object) then tv = object; break end
+        local item = object.getItem and object:getItem()
+        local square = object.getSquare and object:getSquare()
+        local signals = square and square:getObjects()
+        if signals then
+            for i = 0, signals:size() - 1 do
+                local radio = signals:get(i)
+                local md = radio.getModData and radio:getModData()
+                if (not item or (md and md.RadioItemID == item:getID())) and VTUtils.isTelevisionObject(radio) then
+                    tv = radio; break
+                end
+            end
+        end
+        if tv then break end
     end
     local fullType = tv and getTape(tv) or nil
     local entry = tv and entryForTV(tv) or nil
     if not entry then return end
-    if VTUtils.isKnoxBox3DTV(tv) then return end
+    if VTUtils.isKnoxBox3DTV(tv) and ViewMode.isViewpointActive() then return end
+    if canContinue(tv) then
+        _G.KBMMPVanillaPlayback.addContinueOption(context, tv)
+        return
+    end
     context:addOption("Watch: " .. tostring(entry.label), tv, openWindow)
+end
+
+local originalTogglePower = ISRadioAction.performToggleOnOff
+function ISRadioAction:performToggleOnOff()
+    originalTogglePower(self)
+    local tv = self.device or deviceFromData(self.deviceData)
+    if tv and self.deviceData and not self.deviceData:getIsTurnedOn()
+            and PremiumScreen.canRender(tv) then
+        if _G.KBMViewpointTVPlayback then _G.KBMViewpointTVPlayback.stopDevice(tv) end
+        if activeTV == tv then closeWindow() end
+    end
 end
 
 Events.OnFillWorldObjectContextMenu.Add(onContextMenu)

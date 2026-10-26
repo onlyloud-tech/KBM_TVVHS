@@ -1,0 +1,42 @@
+module KBMProjector
+{
+    model Screen
+    {
+        mesh = WorldItems/KBM_ProjectionScreen,
+        texture = KBM_ProjectionScreen,
+        scale = 1.0,
+    }
+
+    model DriveInScreen
+    {
+        mesh = WorldItems/KBM_DriveInScreen,
+        texture = KBM_ProjectionScreen,
+        scale = 1.0,
+    }
+
+    item Screen
+    {
+        DisplayName = Projection Screen,
+        DisplayCategory = Electronics,
+        hidden = true,
+        ItemType = base:normal,
+        Icon = Television,
+        Weight = 0.1,
+        StaticModel = Screen,
+        WorldStaticModel = Screen,
+    }
+
+
+    item DriveInScreen
+    {
+        DisplayName = Drive-In Projection Screen,
+        DisplayCategory = Electronics,
+        hidden = true,
+        ItemType = base:normal,
+        Icon = Television,
+        Weight = 0.1,
+        StaticModel = DriveInScreen,
+        WorldStaticModel = DriveInScreen,
+    }
+
+}
