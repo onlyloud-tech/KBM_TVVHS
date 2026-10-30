@@ -10,6 +10,7 @@ local WatchReward = require "KBMGB/Movie/WatchReward"
 local WorldAudio = require "KBMGB/Movie/WorldAudio"
 local ViewMode = require "KBMGB/Movie/ViewMode"
 local PremiumScreen = require "KBMGB/Movie/PremiumScreen"
+local RemoteTargets = require "KBMGB/Movie/TVRemoteTargets"
 
 local TV_TYPE = "KBM.ScreenTV"
 local LEGACY_TV_TYPE = "KBMViewpointProbe.ScreenTV"
@@ -212,18 +213,39 @@ local function seek(device, seconds)
     return true
 end
 
+local function remoteState(device)
+    local mp = _G.KBMMPClient
+    return isClient() and mp and mp.getPlaybackState and mp.getPlaybackState(device) or nil
+end
 local remoteControls = {
-    isActive = function(device) return device == activeDevice and activeEntry ~= nil end,
+    isActive = function(device)
+        local state = remoteState(device)
+        if state then return state.playing == true end
+        local overlay = _G.KBMMPVanillaPlayback
+        return (device == activeDevice and activeEntry ~= nil)
+            or (overlay and overlay.isActive and overlay.isActive(device)) or false
+    end,
     togglePause = function(device)
         if isClient() and _G.KBMMPClient then return _G.KBMMPClient.request(device, "Pause") end
-        return togglePause(device)
+        if device == activeDevice and activeEntry then return togglePause(device) end
+        local overlay = _G.KBMMPVanillaPlayback
+        if overlay and overlay.togglePause then return overlay.togglePause(device) end
     end,
-    isPaused = function(device) return device == activeDevice and activePaused end,
+    isPaused = function(device)
+        local state = remoteState(device)
+        if state then return state.paused == true end
+        if device == activeDevice and activeEntry then return activePaused end
+        local overlay = _G.KBMMPVanillaPlayback
+        return overlay and overlay.isPaused and overlay.isPaused(device) or false
+    end,
     seek = function(device, delta)
         if isClient() and _G.KBMMPClient then return _G.KBMMPClient.request(device, "Seek", delta) end
-        return seek(device, delta)
+        if device == activeDevice and activeEntry then return seek(device, delta) end
+        local overlay = _G.KBMMPVanillaPlayback
+        if overlay and overlay.seek then return overlay.seek(device, delta) end
     end,
 }
+
 -- The native Recorded Media play flag can expire before the Java movie does.
 -- Other KnoxBox UI code uses this state to follow actual 3D playback.
 _G.KBMViewpointTVPlayback = {
@@ -415,7 +437,11 @@ Events.OnRenderTick.Add(function()
         end
         log("handed Viewpoint movie to overlay at " .. tostring(seconds) .. "s")
     end
-    updateAudioClock(p)
+    -- This callback owns the shared decoder tick. The projector supplies its own
+    -- audio clock; clearing it here would compete with the projector's updates.
+    local projector = _G.KBMProjectorPlayback
+    local projectorActive = projector and projector.isActive and projector.isActive()
+    if not projectorActive then updateAudioClock(p) end
     p.tick()
     PremiumScreen.update()
     if activeEntry and activeWatchReward then
@@ -445,17 +471,13 @@ end)
 
 -- Viewpoint's 3D world-item model can be the clicked surface even though the
 -- associated IsoRadio is invisible. Offer the same native panel explicitly.
-local function radioForWorldItem(square, item)
-    local objects = square and square.getObjects and square:getObjects() or nil
-    if not objects then return nil end
-    for i = 0, objects:size() - 1 do
-        local object = objects:get(i)
-        if instanceof(object, "IsoRadio") then
-            local data = object:getModData()
-            if data and data.RadioItemID == item:getID() then return object end
-        end
-    end
-    return nil
+local radioForWorldItem = RemoteTargets.linkedRadio
+local function addRemoteOption(context, player, device)
+    if not RemoteTargets.canUse(device, player) then return end
+    if context.getOptionFromName and context:getOptionFromName("KnoxBox TV Remote") then return end
+    context:addOption("KnoxBox TV Remote", player, function(p)
+        RemoteOverlay.open(p, device, remoteControls)
+    end)
 end
 
 local function onWorldMenu(playerNum, context, worldObjects, test)
@@ -465,6 +487,13 @@ local function onWorldMenu(playerNum, context, worldObjects, test)
         local square = object and object.getSquare and object:getSquare() or nil
         if square and not seen[square] then
             seen[square] = true
+            local clickedItem = object.getItem and object:getItem()
+            local native = RemoteTargets.isNativeTV(object) and object
+                or (not RemoteTargets.isCustomItem(clickedItem) and RemoteTargets.nativeOnSquare(square))
+            if native then
+                addRemoteOption(context, getSpecificPlayer(playerNum), native)
+                return
+            end
             local objects = square:getWorldObjects()
             for i = 0, objects:size() - 1 do
                 local world = objects:get(i)
@@ -478,11 +507,7 @@ local function onWorldMenu(playerNum, context, worldObjects, test)
                         context:addOption("Device Options (KnoxBox TV)", player, function(p)
                             DeviceWindow.activate(p, radio)
                         end)
-                        if radio:getDeviceData():canPlayerRemoteInteract(player) then
-                            context:addOption("KnoxBox TV Remote", player, function(p)
-                                RemoteOverlay.open(p, radio, remoteControls)
-                            end)
-                        end
+                        addRemoteOption(context, player, radio)
                     else
                         context:addOption("KnoxBox TV: place a newly spawned TV", nil, function()
                             log("old plain-item TV has no media device; spawn and place a new TV")
@@ -496,33 +521,7 @@ local function onWorldMenu(playerNum, context, worldObjects, test)
 end
 Events.OnFillWorldObjectContextMenu.Add(onWorldMenu)
 
-local function nearestRemoteTV(player)
-    local current = player and player.getSquare and player:getSquare() or nil
-    local cell = current and current:getCell() or nil
-    if not cell then return nil end
-    local best, bestDistance = nil, math.huge
-    for x = current:getX() - 10, current:getX() + 10 do
-        for y = current:getY() - 10, current:getY() + 10 do
-            local square = cell:getGridSquare(x, y, current:getZ())
-            local items = square and square:getWorldObjects() or nil
-            if items then
-                for i = 0, items:size() - 1 do
-                    local world = items:get(i)
-                    local item = world and world.getItem and world:getItem() or nil
-                    if item and isTVType(item:getFullType()) then
-                        local radio = radioForWorldItem(square, item)
-                        local data = radio and radio:getDeviceData() or nil
-                        if data and data:canPlayerRemoteInteract(player) then
-                            local distance = (x - current:getX()) ^ 2 + (y - current:getY()) ^ 2
-                            if distance < bestDistance then best, bestDistance = radio, distance end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
+local nearestRemoteTV = RemoteTargets.nearest
 
 -- The ground-inventory entry remains selectable even if Viewpoint consumes
 -- the model click before PZ dispatches the world context-menu event.
@@ -534,7 +533,7 @@ local function onInventoryMenu(playerNum, context, items)
             context:addOption("Use KnoxBox TV Remote", player, function(p)
                 local radio = nearestRemoteTV(p)
                 if radio then RemoteOverlay.open(p, radio, remoteControls)
-                elseif p and p.Say then p:Say("Equip the remote and face a nearby KnoxBox TV.") end
+                elseif p and p.Say then p:Say("Move within remote range of a KnoxBox, Premium or ValuTech TV.") end
             end)
             return
         end
@@ -549,6 +548,7 @@ local function onInventoryMenu(playerNum, context, items)
                 context:addOption("Device Options (KnoxBox TV)", player, function(p)
                     DeviceWindow.activate(p, target)
                 end)
+                addRemoteOption(context, player, target)
             end
             return
         end

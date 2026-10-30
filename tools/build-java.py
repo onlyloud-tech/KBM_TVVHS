@@ -19,6 +19,12 @@ SOURCES = (
     "KBMPremiumTVBridge", "KBMViewModeBridge",
     "KBMCameraRecorder", "KBMRecordingAudioCapture", "KBMTVCaptionBridge",
 )
+NOTICES = {
+    "META-INF/licenses/KnoxBox-Bridges.md": ROOT / "LICENSES/Java/KnoxBox-Bridges.md",
+    "META-INF/licenses/KnoxBox-License.md": ROOT / "LICENSES/KnoxBox-License.md",
+    "META-INF/licenses/GPL-3.0.txt": ROOT / "LICENSES/Java/GPL-3.0.txt",
+    "META-INF/licenses/JCodec-BSD-2-Clause.txt": ROOT / "LICENSES/Java/JCodec-BSD-2-Clause.txt",
+}
 
 
 def main() -> None:
@@ -57,17 +63,21 @@ def main() -> None:
         rebuilt = temp / "KBMMovieScreenBridge.jar"
         with ZipFile(JAR) as previous, ZipFile(rebuilt, "w") as updated:
             for info in previous.infolist():
-                if (info.filename not in outputs and info.filename not in (
+                if (info.filename not in outputs and info.filename not in NOTICES and info.filename not in (
                         "com/knoxboxprobe/KBMViewpointScreenProbe.class",
                         "com/knoxboxprobe/KBMCinemaProjectorBridge$QuietDeviceData.class")):
                     updated.writestr(info, previous.read(info.filename))
             for name, file in sorted(outputs.items()):
+                updated.write(file, name)
+            for name, file in NOTICES.items():
                 updated.write(file, name)
         with ZipFile(rebuilt) as checked:
             if checked.testzip() is not None or any(checked.namelist().count(name) != 1 for name in outputs):
                 raise RuntimeError("Rebuilt jar failed integrity check")
             if any(name.startswith(('zombie/', 'org/lwjgl/')) for name in checked.namelist()):
                 raise RuntimeError("Compile-only game stubs must not be distributed")
+            if any(checked.read(name) != file.read_bytes() for name,file in NOTICES.items()):
+                raise RuntimeError("Embedded license notice mismatch")
         args.output.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(rebuilt, args.output)
     print("Rebuilt", args.output)

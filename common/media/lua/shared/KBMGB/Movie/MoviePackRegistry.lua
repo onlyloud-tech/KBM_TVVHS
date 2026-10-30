@@ -1,7 +1,7 @@
 local MoviePackRegistry = rawget(_G, "KBMGBMoviePackRegistry")
 if MoviePackRegistry then return MoviePackRegistry end
 
-MoviePackRegistry = { packs = {}, byItemType = {} }
+MoviePackRegistry = { packs = {}, byItemType = {}, byMediaId = {} }
 
 local function validText(value)
     return type(value) == "string" and value ~= ""
@@ -24,6 +24,9 @@ function MoviePackRegistry.register(pack)
             entry.modId = stored.modId
             stored.entries[#stored.entries + 1] = entry
             MoviePackRegistry.byItemType[entry.itemType] = entry
+            if validText(entry.recMediaId) and not MoviePackRegistry.byMediaId[entry.recMediaId] then
+                MoviePackRegistry.byMediaId[entry.recMediaId] = entry
+            end
         end
     end
     MoviePackRegistry.packs[stored.packId] = stored
@@ -38,6 +41,11 @@ end
 
 function MoviePackRegistry.allEntries()
     return MoviePackRegistry.byItemType
+end
+
+-- Resolve a device's tape without scanning every registered movie.
+function MoviePackRegistry.getByMediaId(mediaId)
+    return mediaId and MoviePackRegistry.byMediaId[tostring(mediaId)] or nil
 end
 
 _G.KBMGBMoviePackRegistry = MoviePackRegistry

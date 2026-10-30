@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.knoxboxprobe;
 
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import me.zed_0xff.zombie_buddy.Exposer;
@@ -80,14 +79,10 @@ public final class KBMProjectorFrameTap {
     public static void update() {
         if (!active) return;
         try {
-            Class<?> player = Class.forName("com.knoxboxprobe.KBMMovieScreenBridge");
-            boolean playing = (Boolean) player.getMethod("isPlaying").invoke(null);
-            if (!playing) return;
-            int frame = (Integer) player.getMethod("getCurrentFrame").invoke(null);
+            if (!KBMMovieScreenBridge.isPlaying()) return;
+            int frame = KBMMovieScreenBridge.getCurrentFrame();
             if (frame <= 0 || frame == lastFrame) return;
-            Field field = player.getDeclaredField("framePixels");
-            field.setAccessible(true);
-            int[] pixels = (int[]) field.get(null);
+            int[] pixels = KBMMovieScreenBridge.currentFramePixels();
             if (pixels == null || pixels.length != FRAME_WIDTH * FRAME_HEIGHT) return;
             if (!uploadPending.compareAndSet(false, true)) return;
             if (stagedFrame == null) stagedFrame = new int[pixels.length];
@@ -97,7 +92,7 @@ public final class KBMProjectorFrameTap {
                 try { upload(stagedFrame, frame); }
                 finally { uploadPending.set(false); }
             });
-        } catch (ReflectiveOperationException | SecurityException error) {
+        } catch (RuntimeException error) {
             uploadPending.set(false);
             active = false;
             status = "frame tap failed: " + error;
@@ -158,8 +153,9 @@ public final class KBMProjectorFrameTap {
         setDataNanos += System.nanoTime() - setDataStart;
         measuredUploads++;
         if (frameNumber == 1 || frameNumber % 120 == 0) {
-            status = "projected frame " + frameNumber + " to texture " + number(texture, "getID");
-            System.out.println("[KBMProjector] " + status + ", " + width + "x" + height
+            status = "uploaded frame " + frameNumber + " to " + (selectedModel == null ? "auto-selected screen" : selectedModel)
+                + " texture " + number(texture, "getID");
+            System.out.println("[KBMScreenUpload] " + status + ", " + width + "x" + height
                 + ", avg fill " + String.format("%.2f", fillNanos / 1_000_000.0 / measuredUploads)
                 + " ms, avg setData " + String.format("%.2f", setDataNanos / 1_000_000.0 / measuredUploads)
                 + " ms over " + measuredUploads + " uploads");

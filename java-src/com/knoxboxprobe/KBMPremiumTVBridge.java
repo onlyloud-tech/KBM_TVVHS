@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Grymlock. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-KnoxBox-Original-Content
+// See LICENSES/KnoxBox-License.md and LICENSES/Java/KnoxBox-Bridges.md.
 package com.knoxboxprobe;
 
 import java.io.File;

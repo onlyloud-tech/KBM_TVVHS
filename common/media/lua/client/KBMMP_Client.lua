@@ -16,6 +16,8 @@ local function stateFor(device)
         if address and a.x==address.x and a.y==address.y and a.z==address.z and a.index==address.index then return s end
     end
 end
+-- Remote controls read authoritative per-device state, including ISO playback.
+function C.getPlaybackState(device) return stateFor(device) end
 function C.watch(device)
     local s=stateFor(device)
     if s then C.selected=s.token end

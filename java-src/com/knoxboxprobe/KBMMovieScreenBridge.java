@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Grymlock. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-KnoxBox-Original-Content
+// See LICENSES/KnoxBox-License.md and LICENSES/Java/KnoxBox-Bridges.md.
 package com.knoxboxprobe;
 
 import java.nio.ByteBuffer;
@@ -71,6 +74,9 @@ public final class KBMMovieScreenBridge {
     private static FrameGrab grab;
     private static int[] sourcePixels;
     private static int[] framePixels;
+    // Render-thread-owned upload storage; preserve frame copies until their callbacks finish.
+    private static ByteBuffer tvUploadBuffer;
+    private static ByteBuffer legacyTvUploadBuffer;
     private static byte[] cabinetPixels;
     private static int cabinetTextureId = -1;
     private static int cabinetWidth;
@@ -137,6 +143,8 @@ public final class KBMMovieScreenBridge {
         }
     }
     public static int getCurrentFrame() { return frameNumber; }
+    /** Internal frame tap; callers copy before dispatching to the render context. */
+    static int[] currentFramePixels() { return framePixels; }
     public static int getDisplayedFrame() { return displayedFrame; }
     public static double getFps() { return fps; }
     public static void setAudioClockMs(long positionMs) {
@@ -815,7 +823,13 @@ public final class KBMMovieScreenBridge {
                 cabinetHeight = height;
             }
         }
-        ByteBuffer pixels = ByteBuffer.allocateDirect(width * height * 4);
+        int byteCount = width * height * 4;
+        ByteBuffer pixels = legacy ? legacyTvUploadBuffer : tvUploadBuffer;
+        if (pixels == null || pixels.capacity() != byteCount) {
+            pixels = ByteBuffer.allocateDirect(byteCount);
+            if (legacy) legacyTvUploadBuffer = pixels; else tvUploadBuffer = pixels;
+        }
+        pixels.clear();
         pixels.put(cabinet);
         for (int y = cabinetRows; y < height; y++) {
             int sourceY = y * SIZE / height;

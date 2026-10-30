@@ -410,7 +410,7 @@ Events.OnRenderTick.Add(function()
     local bridge = tap()
     if not bridge then return end
     local movie = playerBridge()
-    if movie and movie.tick then movie.tick() end
+    -- KBM_ViewpointProbe owns the shared movie decoder tick, including projectors.
     bridge.update()
     local status = tostring(bridge.getStatus())
     if status ~= lastStatus then lastStatus = status; log(status) end

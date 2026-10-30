@@ -63,9 +63,7 @@ function P.entry(device)
     if not dd or not dd:getIsTelevision() or not dd:hasMedia() then return nil end
     local media = dd:getMediaData()
     if not media then return nil end
-    for _, e in pairs(Registry.allEntries()) do
-        if e.recMediaId == media:getId() then return e end
-    end
+    return Registry.getByMediaId(media:getId())
 end
 function P.owner(player) return tostring(player:getUsername()) end
 function P.allowed(s, player)

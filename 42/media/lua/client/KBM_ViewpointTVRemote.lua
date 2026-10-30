@@ -1,4 +1,4 @@
--- The pictured remote controls the same IsoRadio as the native TV panel.
+-- The pictured remote controls the native TV device (or the custom TV's linked radio).
 require "ISUI/ISPanel"
 require "RadioCom/ISRadioAction"
 require "TimedActions/ISDeviceMediaAction"

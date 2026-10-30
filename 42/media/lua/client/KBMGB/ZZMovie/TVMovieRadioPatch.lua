@@ -7,6 +7,7 @@ local MovieWindow = require("KBMGB/Movie/TVMovieWindow")
 local VTUtils = require("KBMGB/System/VTUtils")
 local ViewMode = require "KBMGB/Movie/ViewMode"
 local PremiumScreen = require "KBMGB/Movie/PremiumScreen"
+local NearbyDeviceScan = require "KBMGB/Movie/NearbyDeviceScan"
 
 local STATE_KEY = "KBMGB_TV_Movie"
 local RECORDABLE_TYPE = "KBM.RecordedVHS"
@@ -88,7 +89,13 @@ local function clearMovieCaptions(tv)
     return true
 end
 
-local captionScanTick = 0
+local captionScan = NearbyDeviceScan.new(10, 16)
+local function discoverMovie(tv)
+    if VTUtils.isTelevisionObject(tv) and isPlayingKnoxBoxMovie(tv) then
+        captionTVs[tv] = true
+        clearMovieCaptions(tv)
+    end
+end
 local function updateMovieCaptions()
     -- A single-player movie may have been started in isometric view. Moving
     -- into Viewpoint must hand off its existing timeline, not leave the UI up.
@@ -146,33 +153,10 @@ local function updateMovieCaptions()
     movieCaptionActive = movieActive
 
     -- Pick up a movie that was already playing when this client loaded the area.
-    captionScanTick = captionScanTick + 1
-    if captionScanTick < 60 then return end
-    captionScanTick = 0
-    local player = getPlayer()
-    local cell = player and player:getCell() or nil
-    if not cell then return end
-    local z = math.floor(player:getZ())
-    local x, y = math.floor(player:getX()), math.floor(player:getY())
-    nearbySignals = {}
-    for sx = x - 10, x + 10 do
-        for sy = y - 10, y + 10 do
-            local square = cell:getGridSquare(sx, sy, z)
-            local objects = square and square:getObjects() or nil
-            if objects then
-                for i = 0, objects:size() - 1 do
-                    local tv = objects:get(i)
-                    if tv and tv.getDeviceData and tv.getChatElement then
-                        nearbySignals[tv] = true
-                    end
-                    if VTUtils.isTelevisionObject(tv) and isPlayingKnoxBoxMovie(tv) then
-                        captionTVs[tv] = true
-                        clearMovieCaptions(tv)
-                    end
-                end
-            end
-        end
-    end
+    local found, invalid = captionScan:update(getPlayer(), getTimestampMs(),
+        movieActive and 1000 or 5000, discoverMovie)
+    if invalid then nearbySignals = {} end
+    if found then nearbySignals = found end
 end
 
 local function onDeviceText(_guid, _codes, x, y, z, line)
@@ -260,12 +244,41 @@ local function openWindow(tv, remoteEntry, startHidden)
     log("opened " .. tostring(entry.itemType) .. " recording=" .. tostring(entry.recordingId or ""))
 end
 
+local function remoteApp(tv)
+    local app = activeTV == tv and activeWindow and activeWindow.app
+    return app and app.kbm and app.signal ~= false and not app.err and app or nil
+end
+
 _G.KBMMPVanillaPlayback = {
     version = 1,
     open = function(tv, entry, startHidden) openWindow(tv, entry, startHidden); return activeWindow end,
     close = closeWindow,
     canContinue = canContinue,
     continueMovie = continueMovie,
+    isActive = function(tv)
+        local app = remoteApp(tv)
+        return app ~= nil and not app.kbm.isFinished()
+    end,
+    isPaused = function(tv)
+        local app = remoteApp(tv)
+        return app ~= nil and not app.kbm.isPlaying()
+    end,
+    togglePause = function(tv)
+        local app = remoteApp(tv)
+        if app then return app:togglePause() end
+    end,
+    seek = function(tv, seconds)
+        local app = remoteApp(tv)
+        if not app or app.kbm.isFinished() then return false end
+        local total, fps = app.kbm.getTotalFrames(), app.kbm.getFps()
+        if total <= 0 or fps <= 0 then return false end
+        local target = math.max(1, math.min(total, app.kbm.getCurrentFrame() + math.floor(seconds * fps)))
+        local paused = not app.kbm.isPlaying()
+        app.kbm.seekFrame(target)
+        app:_stopAudio()
+        if paused then app:pause() end
+        return true
+    end,
     restorePosition = function(tv, seconds, paused)
         if activeTV == tv and activeWindow then
             pendingPosition = {window=activeWindow, seconds=seconds, paused=paused}
